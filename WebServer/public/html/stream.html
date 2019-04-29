@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <style>
+        img.bg {
+            min-height: 100%;
+            min-width: 1024px;
+            width: 100%;
+            height: auto;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        h2 {
+            position: absolute;
+            top: 200px;
+            left: 0;
+            width: 100%;
+        }
+
+        @media screen and (max-width: 1024px) {
+            img.bg {
+                left: 50%;
+                margin-left: -512px;
+            }
+        }
+    </style>
+    <title>Page Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/srinskit/RachJs@master/RachJs.js"></script>
+    <style>
+        html, body {
+            height: 100%;
+            min-height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+    <script>
+        var rach, view_pub, drive_pub, prevX, prevAngle, angle = (3 + 12) / 2;
+
+        function init() {
+            let bot_ip = getCookie("bot_ip");
+            let bot_name = getCookie("bot_name");
+            if (bot_ip.length === 0 && bot_name.length === 0) {
+                window.location.href = "/";
+            } else {
+                let img = document.createElement("IMG");
+                img.src = "http://" + bot_ip + ":8000/stream.mjpg";
+                console.log(img.src);
+                console.log(`ws://${window.location.hostname}:8080`);
+                console.log(document.body.clientWidth);
+                img.className += " bg";
+                document.body.appendChild(img);
+                document.title = bot_name;
+                rach = new Rach(`ws://${window.location.hostname}:8080`, {username: '', password: ''});
+                rach.start();
+                setTimeout(() => {
+                    view_pub = rach.add_pub(`/bots/${bot_name}/view`);
+                    drive_pub = rach.add_pub(`/bots/${bot_name}/drive`);
+                }, 2000)
+            }
+        }
+
+        function dinit() {
+            if (rach) {
+                rach.stop();
+                rach = view_pub = drive_pub = null;
+            }
+        }
+
+        function set_drive(cmd) {
+            console.log(cmd);
+            if (drive_pub)
+                drive_pub.pub(cmd);
+        }
+
+        function pan_view(left) {
+            if (left)
+                angle += 1;
+            else
+                angle -= 1;
+            if (angle < 3)
+                angle = 3;
+            if (angle > 12)
+                angle = 12;
+            if (prevAngle === Number(angle.toFixed(0))) return;
+            prevAngle = Number(angle.toFixed(0));
+            if (view_pub)
+                view_pub.pub(prevAngle);
+            console.log(prevAngle);
+        }
+
+        function getCookie(cname) {
+            let name = cname + "=";
+            let decodedCookie = decodeURIComponent(document.cookie);
+            let ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) === 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return "";
+        }
+
+        function normView(x) {
+            return 15 - Number((9 * (x / document.body.clientWidth) + 3).toFixed(0));
+        }
+
+        function showCoords(event) {
+            let x = event.clientX;
+            x = normView(x);
+            if (prevX === x) return;
+            prevX = x;
+            angle = x;
+            console.log(x);
+            if (view_pub)
+                view_pub.pub(x);
+        }
+
+        var hasGP = false;
+        var repGP;
+
+        function canGame() {
+            return "getGamepads" in navigator;
+        }
+
+        function reportOnGamepad() {
+            var gp = navigator.getGamepads()[0];
+
+
+            if (gp.buttons[5].pressed || gp.buttons[7].pressed) pan_view(false);
+            if (gp.buttons[4].pressed || gp.buttons[6].pressed) pan_view(true);
+
+            if (gp.axes[2] < -0.5) {
+                set_drive("a");
+                return;
+            } else if (gp.axes[2] > 0.5) {
+                set_drive("d");
+                return;
+            }
+            if (gp.axes[1] < -0.5) {
+                set_drive("w");
+            } else if (gp.axes[1] > 0.5) {
+                set_drive("s");
+            }
+        }
+
+        $(document).ready(function () {
+
+            if (canGame()) {
+
+                var prompt = "To begin using your gamepad, connect it and press any button!";
+                $("#gamepadPrompt").text(prompt);
+
+                $(window).on("gamepadconnected", function () {
+                    hasGP = true;
+                    $("#gamepadPrompt").html("Gamepad connected!");
+                    console.log("connection event");
+                    repGP = window.setInterval(reportOnGamepad, 100);
+                });
+
+                $(window).on("gamepaddisconnected", function () {
+                    console.log("disconnection event");
+                    $("#gamepadPrompt").text(prompt);
+                    window.clearInterval(repGP);
+                });
+
+                //setup an interval for Chrome
+                var checkGP = window.setInterval(function () {
+                    // console.log('checkGP');
+                    if (navigator.getGamepads()[0]) {
+                        if (!hasGP) $(window).trigger("gamepadconnected");
+                        window.clearInterval(checkGP);
+                    }
+                }, 500);
+            }
+
+        });
+
+        function keyPress(event) {
+            let key = event.key.toLowerCase();
+            if (['w', 'a', 's', 'd'].indexOf(key) !== -1)
+                set_drive(key);
+            else if (key === 'h')
+                window.location.href = "/";
+        }
+    </script>
+</head>
+<body id="window" onmousemove="showCoords(event)" onkeypress="keyPress(event)" onload="init()" onunload="dinit()">
+</body>
+</html>
